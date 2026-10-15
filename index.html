@@ -5,58 +5,212 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dailyish · Daily mini games</title>
   <meta name="description" content="New tiny games every day. One minute, share your score.">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <header>
     <div class="wrap">
       <a class="logo" href="index.html">daily<span>ish</span></a>
       <nav>
-        <a href="index.html">Games</a>
-        <a href="#about">About</a>
+        <a href="index.html" class="active">Games</a>
       </nav>
     </div>
   </header>
 
   <main class="wrap">
     <section class="hero">
-      <h1>One minute. Every day.</h1>
+      <span class="chip"><span class="dot"></span><span id="today">Today's puzzles are live</span></span>
+      <h1>One minute.<br><em>Every day.</em></h1>
       <p>Tiny daily games. Everyone gets the same puzzle. Share your score.</p>
     </section>
 
+    <div class="section-title">
+      <h2>Today's games</h2>
+      <span id="doneCount"></span>
+    </div>
     <section class="grid">
-      <a class="card" href="peak.html">
-        <div class="emoji">⛰️</div>
+      <a class="card" href="peak.html" data-game="peak" style="--c:#6fb6ff">
+        <div class="icon">⛰️</div>
         <h2>Peak</h2>
         <p>A mountain hides in the fog. Find the summit in 7 probes.</p>
         <span class="tag">PLAY TODAY</span>
       </a>
 
-      <a class="card" href="half.html">
-        <div class="emoji">✂️</div>
+      <a class="card" href="half.html" data-game="half" style="--c:#ff8a6b">
+        <div class="icon">✂️</div>
         <h2>Half</h2>
         <p>One straight line. Cut the shape exactly in half.</p>
         <span class="tag">PLAY TODAY</span>
       </a>
 
-      <a class="card" href="arc.html">
-        <div class="emoji">🎯</div>
+      <a class="card" href="arc.html" data-game="arc" style="--c:#b48cff">
+        <div class="icon">🎯</div>
         <h2>Arc</h2>
         <p>The ball vanishes mid flight. Guess where it lands.</p>
         <span class="tag">PLAY TODAY</span>
       </a>
+    </section>
 
-      <div class="card soon">
-        <div class="emoji">🧱</div>
-        <h2>Tower</h2>
-        <p>The whole world builds one tower. One block a day. Don't knock it over.</p>
-        <span class="tag">COMING SOON</span>
+    <div class="section-title">
+      <h2>Attendance</h2>
+      <span>Check in every day to keep your streak</span>
+    </div>
+    <section class="panel attend">
+      <div class="streak">
+        <div class="flame">🔥 Current streak<b><span id="streak">0</span><small>days</small></b></div>
+        <div class="stats">
+          <div class="stat"><div id="best">0</div><span>Best streak</span></div>
+          <div class="stat"><div id="totalDays">0</div><span>Days total</span></div>
+        </div>
+        <button class="btn" id="checkBtn">Check in for today</button>
+        <p class="hint">Playing any game also counts. Saved on this device.</p>
+      </div>
+      <div>
+        <div class="cal-head">
+          <button id="prevM" aria-label="Previous month">‹</button>
+          <span id="monthLabel"></span>
+          <button id="nextM" aria-label="Next month">›</button>
+        </div>
+        <div class="cal" id="cal"></div>
+        <div class="legend"><span><i></i>Checked in</span><span>★ All 3 games done</span></div>
       </div>
     </section>
   </main>
 
-  <footer id="about">
-    <div class="wrap">Made by a student who likes tiny games. New puzzle every midnight.</div>
+  <footer>
+    <div class="wrap">
+      <p class="idea">💡 Got an idea for a new game? Send it to <a href="mailto:sjein0809@gmail.com?subject=dailyish%20game%20idea">sjein0809@gmail.com</a></p>
+      <div class="foot-row">
+        <span>dailyish · new puzzles every midnight</span>
+        <a class="insta" href="https://www.instagram.com/s1wptjg_/" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+          @s1wptjg_
+        </a>
+      </div>
+    </div>
   </footer>
+
+<script src="common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const CHECK_KEY = "dailyish-checkins";
+const GAMES = ["peak", "half", "arc"];
+
+// ===== Dates as yyyymmdd numbers =====
+const keyOf = d => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+const dateOf = k => new Date(Math.floor(k / 10000), Math.floor(k / 100) % 100 - 1, k % 100);
+const addDays = (k, n) => { const d = dateOf(k); d.setDate(d.getDate() + n); return keyOf(d); };
+const today = Daily.key;
+
+// ===== Storage =====
+function readChecks() {
+  try { return new Set(JSON.parse(localStorage.getItem(CHECK_KEY)) || []); } catch (e) { return new Set(); }
+}
+function writeChecks(set) {
+  try { localStorage.setItem(CHECK_KEY, JSON.stringify([...set])); } catch (e) {}
+}
+// days a daily game was finished, from each game's own save: "<game>-yyyymmdd"
+function readPlayed() {
+  const played = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const m = /^(arc|peak|half2?)-(\d{8})$/.exec(localStorage.key(i));
+      if (!m) continue;
+      const game = m[1].startsWith("half") ? "half" : m[1];
+      (played[m[2]] = played[m[2]] || new Set()).add(game);
+    }
+  } catch (e) {}
+  return played;
+}
+
+let checks = readChecks();
+let played = readPlayed();
+const attended = k => checks.has(k) || !!played[k];
+
+// ===== Today's cards =====
+let done = 0;
+document.querySelectorAll(".card[data-game]").forEach(card => {
+  if (played[today] && played[today].has(card.dataset.game)) {
+    done++;
+    const tag = card.querySelector(".tag");
+    tag.textContent = "DONE ✓";
+    tag.classList.add("done");
+  }
+});
+$("doneCount").textContent = done + " / " + GAMES.length + " done";
+$("today").textContent = "Puzzle #" + Daily.dayNum + " · " +
+  new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+// ===== Streaks =====
+function streaks() {
+  let cur = 0, k = attended(today) ? today : addDays(today, -1);
+  while (attended(k)) { cur++; k = addDays(k, -1); }
+
+  const all = [...new Set([...checks, ...Object.keys(played).map(Number)])].sort((a, b) => a - b);
+  let best = 0, run = 0, prev = null;
+  for (const d of all) {
+    run = prev !== null && addDays(prev, 1) === d ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+  return { cur, best, total: all.length };
+}
+
+// ===== Calendar =====
+let viewOffset = 0; // months back from this month
+
+function renderCalendar(popKey) {
+  const now = dateOf(today);
+  const first = new Date(now.getFullYear(), now.getMonth() - viewOffset, 1);
+  const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  $("monthLabel").textContent = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  $("nextM").disabled = viewOffset === 0;
+
+  const cal = $("cal");
+  cal.innerHTML = "";
+  ["S", "M", "T", "W", "T", "F", "S"].forEach(d => {
+    const el = document.createElement("div");
+    el.className = "dow"; el.textContent = d;
+    cal.appendChild(el);
+  });
+  for (let i = 0; i < first.getDay(); i++) cal.appendChild(document.createElement("div"));
+  for (let d = 1; d <= days; d++) {
+    const k = first.getFullYear() * 10000 + (first.getMonth() + 1) * 100 + d;
+    const el = document.createElement("div");
+    el.className = "day";
+    el.textContent = d;
+    if (k > today) el.classList.add("future");
+    if (k === today) el.classList.add("today");
+    if (attended(k)) el.classList.add("on");
+    if (played[k] && played[k].size >= GAMES.length) el.classList.add("all");
+    if (k === popKey) el.classList.add("pop");
+    cal.appendChild(el);
+  }
+}
+
+function render(popKey) {
+  const s = streaks();
+  $("streak").textContent = s.cur;
+  $("best").textContent = s.best;
+  $("totalDays").textContent = s.total;
+  const btn = $("checkBtn");
+  if (attended(today)) {
+    btn.textContent = "Checked in today ✓";
+    btn.disabled = true;
+  }
+  renderCalendar(popKey);
+}
+
+$("checkBtn").onclick = () => {
+  checks.add(today);
+  writeChecks(checks);
+  viewOffset = 0;
+  render(today);
+};
+$("prevM").onclick = () => { viewOffset++; renderCalendar(); };
+$("nextM").onclick = () => { if (viewOffset > 0) { viewOffset--; renderCalendar(); } };
+
+render();
+</script>
 </body>
 </html>

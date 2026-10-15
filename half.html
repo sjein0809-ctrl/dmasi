@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Half · Dailyish</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <header>
@@ -37,12 +37,24 @@
     </div>
   </main>
 
+  <footer>
+    <div class="wrap">
+      <p class="idea">💡 Got an idea for a new game? Send it to <a href="mailto:sjein0809@gmail.com?subject=dailyish%20game%20idea">sjein0809@gmail.com</a></p>
+      <div class="foot-row">
+        <span>dailyish · new puzzles every midnight</span>
+        <a class="insta" href="https://www.instagram.com/s1wptjg_/" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+          @s1wptjg_
+        </a>
+      </div>
+    </div>
+  </footer>
+
 <script src="common.js"></script>
 <script>
 const W = 800, H = 500;
 const ROUNDS = 3;
-const WEIRD = [0.55, 0.8, 1.05]; // shapes get stranger each round
-const NAME = "half";
+const NAME = "half2"; // bumped when the shape generator changed, so old saves don't replay on new shapes
 
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
@@ -53,77 +65,232 @@ let mode = "daily";
 let shapes, ri, cuts, phase, dragA, dragB;
 
 // ===== Shape generation =====
-function makeShape(rand, weird) {
-  const terms = [];
-  const n = 3 + Math.floor(rand() * 3);
-  for (let i = 0; i < n; i++)
-    terms.push({ f: 2 + Math.floor(rand() * 6), a: (0.05 + rand() * 0.17) * weird, p: rand() * Math.PI * 2 });
-  const sx = 0.8 + rand() * 0.4, sy = 0.8 + rand() * 0.4, rot = rand() * Math.PI;
-  const cx = W / 2 + (rand() - 0.5) * 80, cy = H / 2 + (rand() - 0.5) * 40, R = 165;
-  const pts = [];
-  const N = 180;
-  for (let j = 0; j < N; j++) {
-    const th = j / N * Math.PI * 2;
-    let r = 1;
-    for (const t of terms) r += t.a * Math.sin(t.f * th + t.p);
-    r = Math.max(0.18, r);
-    const x = Math.cos(th) * r * R * sx, y = Math.sin(th) * r * R * sy;
-    pts.push([cx + x * Math.cos(rot) - y * Math.sin(rot), cy + x * Math.sin(rot) + y * Math.cos(rot)]);
+// A shape is a list of parts in "unit" space (main body ~1 unit across),
+// unioned together, with "sub" parts cut out (bites, holes).
+// Round 0 = odd, round 1 = odd + bites/holes, round 2 = combos + islands.
+
+const TAU = Math.PI * 2;
+
+function makeParts(rand, level) {
+  const R = (a, b) => a + rand() * (b - a);
+  const pick = arr => arr[Math.floor(rand() * arr.length)];
+  const parts = [];
+
+  // a smooth random walk drawn as a fat stroke
+  function snake(x, y, ang, steps, step, w, turn) {
+    const pts = [[x, y]];
+    for (let i = 0; i < steps; i++) {
+      ang += R(-turn, turn);
+      x += Math.cos(ang) * step; y += Math.sin(ang) * step;
+      pts.push([x, y]);
+    }
+    parts.push({ t: "snake", pts, w });
+    return pts[pts.length - 1];
   }
-  return pts;
+
+  const families = {
+    critter() { // body + head + legs + tail
+      const rx = R(0.9, 1.3), ry = R(0.5, 0.8), rot = R(0, TAU);
+      parts.push({ t: "ellipse", x: 0, y: 0, rx, ry, rot });
+      const ha = R(0, TAU);
+      parts.push({ t: "ellipse", x: Math.cos(ha) * rx * 1.1, y: Math.sin(ha) * rx * 0.9, rx: R(0.3, 0.5), ry: R(0.3, 0.5), rot: 0 });
+      const legs = 2 + Math.floor(rand() * 4);
+      for (let i = 0; i < legs; i++) {
+        const a = R(0, TAU);
+        snake(Math.cos(a) * rx * 0.7, Math.sin(a) * ry * 0.7, a, 2 + Math.floor(rand() * 2), R(0.35, 0.55), R(0.22, 0.34), 0.8);
+      }
+    },
+    worm() { // one long fat twisty stroke
+      snake(-1, R(-0.4, 0.4), R(0, TAU), 6 + Math.floor(rand() * 4), R(0.45, 0.7), R(0.35, 0.6), 1.6);
+    },
+    star() { // irregular spikes, some very long
+      const n = 5 + Math.floor(rand() * 7), pts = [];
+      const rot = R(0, TAU);
+      for (let i = 0; i < n * 2; i++) {
+        const a = rot + i / (n * 2) * TAU;
+        const r = i % 2 ? R(0.3, 0.55) : R(0.8, rand() < 0.3 ? 2.0 : 1.3);
+        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
+      parts.push({ t: "poly", pts });
+    },
+    cloud() { // chain of very different circles
+      let x = 0, y = 0, r = R(0.5, 0.9);
+      const n = 4 + Math.floor(rand() * 4);
+      for (let i = 0; i < n; i++) {
+        parts.push({ t: "ellipse", x, y, rx: r, ry: r, rot: 0 });
+        const a = R(0, TAU), nr = R(0.2, 0.8);
+        x += Math.cos(a) * (r + nr) * 0.75; y += Math.sin(a) * (r + nr) * 0.75;
+        r = nr;
+      }
+    },
+    hook() { // C / horseshoe with a blob on the end
+      const r = R(0.8, 1.1), a0 = R(0, TAU), span = R(3.6, 5.2), pts = [];
+      for (let i = 0; i <= 12; i++) {
+        const a = a0 + span * i / 12;
+        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
+      parts.push({ t: "snake", pts, w: R(0.35, 0.55) });
+      const e = pts[rand() < 0.5 ? 0 : pts.length - 1];
+      parts.push({ t: "ellipse", x: e[0], y: e[1], rx: R(0.3, 0.55), ry: R(0.3, 0.55), rot: 0 });
+    },
+  };
+
+  const pool = [["critter", "worm", "star", "cloud", "hook"],
+                ["critter", "star", "cloud", "hook"],
+                ["critter", "star", "cloud", "hook", "worm"]][level];
+  families[pick(pool)]();
+
+  // level 2: bolt on a second family, offset, so it looks mashed together
+  if (level === 2) {
+    const before = parts.length;
+    families[pick(pool)]();
+    const ox = R(-0.9, 0.9), oy = R(-0.6, 0.6), s = R(0.6, 0.85);
+    for (let i = before; i < parts.length; i++) {
+      const p = parts[i];
+      const tr = ([x, y]) => [x * s + ox, y * s + oy];
+      if (p.t === "ellipse") { [p.x, p.y] = tr([p.x, p.y]); p.rx *= s; p.ry *= s; }
+      if (p.t === "snake") { p.pts = p.pts.map(tr); p.w *= s; }
+      if (p.t === "poly") p.pts = p.pts.map(tr);
+    }
+  }
+
+  // bites out of the edge, and a hole in the middle of something big
+  if (level >= 1) {
+    const solid = parts.filter(p => p.t === "ellipse" && p.rx > 0.45);
+    const bites = 1 + Math.floor(rand() * (level + 1));
+    for (let i = 0; i < bites; i++) {
+      const a = R(0, TAU), d = R(0.7, 1.1);
+      parts.push({ t: "ellipse", sub: true, x: Math.cos(a) * d, y: Math.sin(a) * d * 0.7, rx: R(0.2, 0.42), ry: R(0.2, 0.42), rot: 0 });
+    }
+    if (solid.length && rand() < 0.7) {
+      const b = pick(solid);
+      parts.push({ t: "ellipse", sub: true, x: b.x + R(-0.2, 0.2) * b.rx, y: b.y, rx: b.rx * R(0.2, 0.35), ry: b.ry * R(0.25, 0.4), rot: R(0, TAU) });
+    }
+  }
+
+  // level 2: one or two separate islands
+  if (level === 2) {
+    const n = 1 + Math.floor(rand() * 2);
+    for (let i = 0; i < n; i++) {
+      const a = R(0, TAU), d = R(1.9, 2.4), r = R(0.18, 0.4);
+      parts.push({ t: "ellipse", x: Math.cos(a) * d, y: Math.sin(a) * d * 0.6, rx: r, ry: r * R(0.7, 1.3), rot: 0 });
+    }
+  }
+  return parts;
+}
+
+function partBox(p) {
+  if (p.t === "ellipse") { const r = Math.max(p.rx, p.ry); return [p.x - r, p.y - r, p.x + r, p.y + r]; }
+  const pad = p.t === "snake" ? p.w / 2 : 0;
+  const xs = p.pts.map(q => q[0]), ys = p.pts.map(q => q[1]);
+  return [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
+}
+
+function drawPart(g, p) {
+  g.globalCompositeOperation = p.sub ? "destination-out" : "source-over";
+  g.fillStyle = g.strokeStyle = "#fff";
+  g.beginPath();
+  if (p.t === "ellipse") {
+    g.ellipse(p.x, p.y, p.rx, p.ry, p.rot, 0, TAU);
+    g.fill();
+  } else if (p.t === "poly") {
+    p.pts.forEach((q, i) => i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]));
+    g.closePath();
+    g.fill();
+  } else {
+    const q = p.pts;
+    g.moveTo(q[0][0], q[0][1]);
+    for (let i = 1; i < q.length - 1; i++)
+      g.quadraticCurveTo(q[i][0], q[i][1], (q[i][0] + q[i + 1][0]) / 2, (q[i][1] + q[i + 1][1]) / 2);
+    g.lineTo(q[q.length - 1][0], q[q.length - 1][1]);
+    g.lineWidth = p.w; g.lineCap = g.lineJoin = "round";
+    g.stroke();
+  }
+}
+
+function tinted(mask, color) {
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  g.drawImage(mask, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = color;
+  g.fillRect(0, 0, W, H);
+  return c;
+}
+
+function makeShape(rand, level) {
+  for (let attempt = 0; ; attempt++) {
+    const parts = makeParts(rand, level);
+
+    // fit the solid parts into the canvas with a margin
+    const boxes = parts.filter(p => !p.sub).map(partBox);
+    const x0 = Math.min(...boxes.map(b => b[0])), y0 = Math.min(...boxes.map(b => b[1]));
+    const x1 = Math.max(...boxes.map(b => b[2])), y1 = Math.max(...boxes.map(b => b[3]));
+    const s = Math.min((W - 120) / (x1 - x0), (H - 90) / (y1 - y0), 200);
+
+    const mask = document.createElement("canvas");
+    mask.width = W; mask.height = H;
+    const g = mask.getContext("2d");
+    g.setTransform(s, 0, 0, s, W / 2 - (x0 + x1) / 2 * s, H / 2 - (y0 + y1) / 2 * s);
+    parts.forEach(p => drawPart(g, p));
+
+    // per-pixel coverage, used for exact-ish area measuring
+    const data = g.getImageData(0, 0, W, H).data;
+    const alpha = new Uint8Array(W * H);
+    let total = 0, bx0 = W, by0 = H, bx1 = 0, by1 = 0;
+    for (let i = 0; i < W * H; i++) {
+      const a = data[i * 4 + 3];
+      if (!a) continue;
+      alpha[i] = a; total += a;
+      const x = i % W, y = (i / W) | 0;
+      if (x < bx0) bx0 = x; if (x > bx1) bx1 = x;
+      if (y < by0) by0 = y; if (y > by1) by1 = y;
+    }
+    // too small after bites? roll again (still deterministic: same rand stream)
+    if (total < W * H * 255 * 0.07 && attempt < 6) continue;
+    return { mask, alpha, total, box: [bx0, by0, bx1, by1],
+             orange: tinted(mask, "#ffb347"), a: tinted(mask, "rgba(255,179,71,0.9)"), b: tinted(mask, "rgba(90,209,160,0.9)") };
+  }
 }
 
 // ===== Geometry =====
-function area(poly) {
-  let s = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length];
-    s += x1 * y2 - x2 * y1;
-  }
-  return Math.abs(s) / 2;
-}
-
-// keep the part of poly on one side of the line a→b
-function clip(poly, a, b, sign) {
-  const side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]));
-  const out = [];
-  for (let i = 0; i < poly.length; i++) {
-    const cur = poly[i], prev = poly[(i + poly.length - 1) % poly.length];
-    const sc = side(cur), sp = side(prev);
-    const cross = () => {
-      const t = sp / (sp - sc);
-      return [prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])];
-    };
-    if (sc >= 0) {
-      if (sp < 0) out.push(cross());
-      out.push(cur);
-    } else if (sp >= 0) out.push(cross());
-  }
-  return out;
-}
-
-function centroid(poly) {
-  let x = 0, y = 0, a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length];
-    const c = x1 * y2 - x2 * y1;
-    a += c; x += (x1 + x2) * c; y += (y1 + y2) * c;
-  }
-  if (Math.abs(a) < 1e-6) return poly[0] || [0, 0];
-  return [x / (3 * a), y / (3 * a)];
-}
-
 function longLine(a, b) {
   const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
   const k = 2000 / L;
   return [[a[0] - dx * k, a[1] - dy * k], [a[0] + dx * k, a[1] + dy * k]];
 }
 
-function cutResult(poly, a, b) {
-  const total = area(poly);
-  const p1 = clip(poly, a, b, 1), p2 = clip(poly, a, b, -1);
-  const a1 = area(p1) / total * 100;
-  return { a1, a2: 100 - a1, p1, p2 };
+// split the shape's pixels by which side of line a→b they fall on
+function cutResult(shape, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const [bx0, by0, bx1, by1] = shape.box;
+  let s1 = 0, x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+  for (let y = by0; y <= by1; y++) {
+    const py = y + 0.5;
+    for (let x = bx0; x <= bx1; x++) {
+      const al = shape.alpha[y * W + x];
+      if (!al) continue;
+      const px = x + 0.5;
+      if (dx * (py - a[1]) - dy * (px - a[0]) >= 0) { s1 += al; x1 += px * al; y1 += py * al; }
+      else { x2 += px * al; y2 += py * al; }
+    }
+  }
+  const s2 = shape.total - s1;
+  const a1 = s1 / shape.total * 100;
+  return { a1, a2: 100 - a1,
+           c1: s1 ? [x1 / s1, y1 / s1] : null, c2: s2 ? [x2 / s2, y2 / s2] : null };
+}
+
+// big polygon covering one side of line a→b (sign 1 = the side cutResult counts as a1)
+function halfPlane(a, b, sign) {
+  const [l1, l2] = longLine(a, b);
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+  const nx = -dy / L * 4000 * sign, ny = dx / L * 4000 * sign;
+  ctx.beginPath();
+  ctx.moveTo(l1[0], l1[1]); ctx.lineTo(l2[0], l2[1]);
+  ctx.lineTo(l2[0] + nx, l2[1] + ny); ctx.lineTo(l1[0] + nx, l1[1] + ny);
+  ctx.closePath();
 }
 
 // ===== Scoring =====
@@ -142,12 +309,6 @@ const fmt = c => {
 };
 
 // ===== Drawing =====
-function path(poly) {
-  ctx.beginPath();
-  poly.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
-  ctx.closePath();
-}
-
 function draw() {
   ctx.fillStyle = "#0f1115";
   ctx.fillRect(0, 0, W, H);
@@ -155,26 +316,29 @@ function draw() {
   ctx.fillStyle = "#1e232c";
   for (let x = 20; x < W; x += 40) for (let y = 20; y < H; y += 40) ctx.fillRect(x - 1, y - 1, 2, 2);
 
-  const poly = shapes[ri];
+  const shape = shapes[ri];
   const cut = cuts[ri];
 
   if (cut) {
-    path(cut.p1); ctx.fillStyle = "rgba(255,179,71,0.85)"; ctx.fill();
-    path(cut.p2); ctx.fillStyle = "rgba(90,209,160,0.85)"; ctx.fill();
+    [[1, shape.a], [-1, shape.b]].forEach(([sign, img]) => {
+      ctx.save(); halfPlane(cut.a, cut.b, sign); ctx.clip();
+      ctx.drawImage(img, 0, 0);
+      ctx.restore();
+    });
     const [l1, l2] = longLine(cut.a, cut.b);
     ctx.strokeStyle = "#e8eaf0"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(l1[0], l1[1]); ctx.lineTo(l2[0], l2[1]); ctx.stroke();
     ctx.font = "bold 20px system-ui"; ctx.textAlign = "center";
-    [[cut.p1, cut.a1], [cut.p2, cut.a2]].forEach(([p, v]) => {
-      const [x, y] = centroid(p);
+    [[cut.c1, cut.a1], [cut.c2, cut.a2]].forEach(([c, v]) => {
+      if (!c) return;
+      const [x, y] = c;
       ctx.fillStyle = "rgba(15,17,21,0.75)";
       ctx.fillRect(x - 36, y - 18, 72, 28);
       ctx.fillStyle = "#e8eaf0";
       ctx.fillText(v.toFixed(1) + "%", x, y + 3);
     });
   } else {
-    path(poly);
-    ctx.fillStyle = "#ffb347"; ctx.fill();
+    ctx.drawImage(shape.orange, 0, 0);
     if (dragA && dragB) {
       const [l1, l2] = longLine(dragA, dragB);
       ctx.save();
@@ -273,7 +437,7 @@ $("practiceBtn").onclick = () => {
 };
 
 function start(rand) {
-  shapes = WEIRD.map(w => makeShape(rand, w));
+  shapes = [0, 1, 2].map(level => makeShape(rand, level));
   ri = 0; cuts = []; phase = "cut"; dragA = dragB = null;
   $("hud").textContent = "Shape 1 / " + ROUNDS;
   $("msg").textContent = "Drag one straight line to cut the shape into two equal halves.";
@@ -291,6 +455,7 @@ if (saved && saved.cuts) {
   cuts = saved.cuts.map(([a, b], i) => Object.assign(cutResult(shapes[i], a, b), { a, b }));
   ri = ROUNDS - 1;
   phase = "done";
+  $("hud").textContent = "Shape " + ROUNDS + " / " + ROUNDS;
   showResult();
   $("msg").textContent = "You already cut today's shapes.";
   draw();
