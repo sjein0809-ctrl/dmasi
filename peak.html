@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peak · Dailyish</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="logo" href="index.html">daily<span>ish</span></a>
+      <nav><a href="index.html">All games</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="game-top">
+      <div><strong id="title">Peak #1</strong> <span id="modeLabel"></span></div>
+      <div id="hud">7 probes left</div>
+    </div>
+
+    <canvas id="c" width="800" height="450"></canvas>
+
+    <div class="msg" id="msg">A mountain is hidden in the fog. Tap anywhere to measure the height there. Find the highest point in 7 probes.</div>
+
+    <div class="result hidden" id="result">
+      <div class="big" id="total"></div>
+      <div class="emojis" id="emojis"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn hidden" id="shareBtn">Share score</button>
+      <button class="btn ghost hidden" id="practiceBtn">Practice mode</button>
+    </div>
+  </main>
+
+<script src="common.js"></script>
+<script>
+const W = 800, H = 450;
+const LEFT = 30, RIGHT = W - 30, TOP = 30, BOT = H - 40;
+const PROBES = 7;
+const NAME = "peak";
+
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const $ = id => document.getElementById(id);
+$("title").textContent = "Peak #" + Daily.dayNum;
+
+let mode = "daily";
+let world, probes, done;
+
+// ===== Build a hidden mountain range =====
+function makeWorld(rand) {
+  const bumps = [];
+  const hills = 2 + Math.floor(rand() * 2);   // wide hills, give you a trail to follow
+  const spikes = 2 + Math.floor(rand() * 2);  // sharp peaks, easy to miss
+  for (let i = 0; i < hills; i++)
+    bumps.push({ c: 0.08 + rand() * 0.84, w: 0.07 + rand() * 0.1, h: 0.35 + rand() * 0.45 });
+  for (let i = 0; i < spikes; i++)
+    bumps.push({ c: 0.05 + rand() * 0.9, w: 0.015 + rand() * 0.025, h: 0.25 + rand() * 0.55 });
+  const wob = rand() * 10;
+
+  const raw = x => {
+    let s = 0.06 + 0.03 * Math.sin(x * 23 + wob);
+    for (const b of bumps) s += b.h * Math.exp(-0.5 * ((x - b.c) / b.w) ** 2);
+    return s;
+  };
+
+  let max = 0, maxX = 0;
+  for (let i = 0; i <= 4000; i++) {
+    const x = i / 4000, v = raw(x);
+    if (v > max) { max = v; maxX = x; }
+  }
+  const meters = 1500 + Math.floor(rand() * 7000);   // real summit height, hidden
+  const ceiling = max * (1.15 + rand() * 0.35);       // so the top of the screen is not the summit
+  return { raw, max, maxX, meters, ceiling };
+}
+
+const toPx = x => LEFT + x * (RIGHT - LEFT);
+const toX = px => Math.max(0, Math.min(1, (px - LEFT) / (RIGHT - LEFT)));
+const toPy = v => BOT - v / world.ceiling * (BOT - TOP);
+const heightOf = x => Math.round(world.raw(x) / world.max * world.meters);
+
+// ===== Drawing =====
+function draw() {
+  ctx.fillStyle = "#0f1115";
+  ctx.fillRect(0, 0, W, H);
+
+  // the mountain (only after the game)
+  if (done) {
+    ctx.beginPath();
+    ctx.moveTo(LEFT, BOT);
+    for (let i = 0; i <= 400; i++) {
+      const x = i / 400;
+      ctx.lineTo(toPx(x), toPy(world.raw(x)));
+    }
+    ctx.lineTo(RIGHT, BOT);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, TOP, 0, BOT);
+    g.addColorStop(0, "rgba(90,209,160,0.45)");
+    g.addColorStop(1, "rgba(90,209,160,0.05)");
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = "#5ad1a0";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // true summit
+    const sx = toPx(world.maxX), sy = toPy(world.max);
+    ctx.font = "22px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("🚩", sx + 6, sy - 28);
+    ctx.fillStyle = "#5ad1a0";
+    ctx.font = "bold 13px system-ui";
+    ctx.fillText("Summit " + world.meters + "m", sx, sy - 54);
+  } else {
+    // fog bands
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = "rgba(138,144,160," + (0.03 + i * 0.012) + ")";
+      ctx.fillRect(0, TOP + i * (BOT - TOP) / 6, W, (BOT - TOP) / 6);
+    }
+  }
+
+  // ground
+  ctx.strokeStyle = "#3a4150";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, BOT); ctx.lineTo(W, BOT); ctx.stroke();
+
+  // probes
+  const best = bestProbe();
+  probes.forEach((p, i) => {
+    const px = toPx(p.x), py = toPy(world.raw(p.x));
+    const isBest = best && p === best;
+    ctx.save();
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = isBest ? "rgba(255,179,71,0.9)" : "rgba(232,234,240,0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(px, BOT); ctx.lineTo(px, py); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = isBest ? "#ffb347" : "#e8eaf0";
+    ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.font = "bold 13px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(p.h + "m", px, py - 12);
+    ctx.fillStyle = "#555d6e";
+    ctx.font = "11px system-ui";
+    ctx.fillText(String(i + 1), px, BOT + 16);
+  });
+}
+
+function bestProbe() {
+  let b = null;
+  for (const p of probes) if (!b || p.h > b.h) b = p;
+  return b;
+}
+
+// ===== Scoring =====
+function ratio(p) { return world.raw(p.x) / world.max; }
+function emojiFor(r) {
+  if (r >= 0.995) return "🚩";
+  if (r >= 0.9) return "🟩";
+  if (r >= 0.7) return "🟨";
+  if (r >= 0.45) return "🟧";
+  return "🟥";
+}
+function pct() {
+  const b = bestProbe();
+  return Math.min(100, ratio(b) * 100);
+}
+
+function finish() {
+  done = true;
+  const score = pct();
+  const b = bestProbe();
+  $("hud").textContent = "Done";
+  $("msg").textContent = score >= 99.5
+    ? "You found the summit! " + world.meters + "m"
+    : "Your best was " + b.h + "m. The summit was " + world.meters + "m.";
+  $("total").textContent = score.toFixed(1) + "%";
+  $("emojis").textContent = probes.map(p => emojiFor(ratio(p))).join("");
+  $("result").classList.remove("hidden");
+  $("practiceBtn").classList.remove("hidden");
+  if (mode === "daily") {
+    Daily.save(NAME, { xs: probes.map(p => p.x) });
+    $("shareBtn").classList.remove("hidden");
+    Daily.countdown($("sub"), "Peak");
+  } else {
+    $("shareBtn").classList.add("hidden");
+    Daily.stopCountdown();
+    $("sub").textContent = "Practice round. Your daily score is saved separately.";
+  }
+  draw();
+}
+
+// ===== Input =====
+cv.addEventListener("pointerdown", e => {
+  if (done) return;
+  const x = toX(Daily.point(cv, e).x);
+  probes.push({ x, h: heightOf(x) });
+  const left = PROBES - probes.length;
+  $("hud").textContent = left + (left === 1 ? " probe left" : " probes left");
+  $("msg").textContent = "Highest so far " + bestProbe().h + "m";
+  if (left === 0) finish(); else draw();
+});
+
+$("shareBtn").onclick = () => {
+  const text = "Peak #" + Daily.dayNum + "  " + pct().toFixed(1) + "%\n" +
+    probes.map(p => emojiFor(ratio(p))).join("") + "\n" + (location.host || "dailyish");
+  Daily.share(text, $("shareBtn"));
+};
+
+$("practiceBtn").onclick = () => {
+  mode = "practice";
+  $("modeLabel").textContent = "· practice";
+  start(Daily.rng(Math.floor(Math.random() * 1e9)));
+};
+
+function start(rand) {
+  world = makeWorld(rand);
+  probes = [];
+  done = false;
+  $("hud").textContent = PROBES + " probes left";
+  $("msg").textContent = "A mountain is hidden in the fog. Tap anywhere to measure the height there. Find the highest point in 7 probes.";
+  $("result").classList.add("hidden");
+  $("shareBtn").classList.add("hidden");
+  $("practiceBtn").classList.add("hidden");
+  draw();
+}
+
+// ===== Boot =====
+start(Daily.rng(Daily.seedFor(NAME)));
+const saved = Daily.load(NAME);
+if (saved && saved.xs) {
+  probes = saved.xs.map(x => ({ x, h: heightOf(x) }));
+  finish();
+  $("msg").textContent = "You already climbed today. " + $("msg").textContent;
+}
+</script>
+</body>
+</html>

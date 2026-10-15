@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Half · Dailyish</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="logo" href="index.html">daily<span>ish</span></a>
+      <nav><a href="index.html">All games</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="game-top">
+      <div><strong id="title">Half #1</strong> <span id="modeLabel"></span></div>
+      <div id="hud">Shape 1 / 3</div>
+    </div>
+
+    <canvas id="c" width="800" height="500" style="touch-action:none"></canvas>
+
+    <div class="msg" id="msg">Drag one straight line to cut the shape into two equal halves.</div>
+
+    <div class="result hidden" id="result">
+      <div class="big" id="total"></div>
+      <div class="emojis" id="emojis"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn hidden" id="nextBtn">Next shape</button>
+      <button class="btn hidden" id="shareBtn">Share score</button>
+      <button class="btn ghost hidden" id="practiceBtn">Practice mode</button>
+    </div>
+  </main>
+
+<script src="common.js"></script>
+<script>
+const W = 800, H = 500;
+const ROUNDS = 3;
+const WEIRD = [0.55, 0.8, 1.05]; // shapes get stranger each round
+const NAME = "half";
+
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const $ = id => document.getElementById(id);
+$("title").textContent = "Half #" + Daily.dayNum;
+
+let mode = "daily";
+let shapes, ri, cuts, phase, dragA, dragB;
+
+// ===== Shape generation =====
+function makeShape(rand, weird) {
+  const terms = [];
+  const n = 3 + Math.floor(rand() * 3);
+  for (let i = 0; i < n; i++)
+    terms.push({ f: 2 + Math.floor(rand() * 6), a: (0.05 + rand() * 0.17) * weird, p: rand() * Math.PI * 2 });
+  const sx = 0.8 + rand() * 0.4, sy = 0.8 + rand() * 0.4, rot = rand() * Math.PI;
+  const cx = W / 2 + (rand() - 0.5) * 80, cy = H / 2 + (rand() - 0.5) * 40, R = 165;
+  const pts = [];
+  const N = 180;
+  for (let j = 0; j < N; j++) {
+    const th = j / N * Math.PI * 2;
+    let r = 1;
+    for (const t of terms) r += t.a * Math.sin(t.f * th + t.p);
+    r = Math.max(0.18, r);
+    const x = Math.cos(th) * r * R * sx, y = Math.sin(th) * r * R * sy;
+    pts.push([cx + x * Math.cos(rot) - y * Math.sin(rot), cy + x * Math.sin(rot) + y * Math.cos(rot)]);
+  }
+  return pts;
+}
+
+// ===== Geometry =====
+function area(poly) {
+  let s = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length];
+    s += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(s) / 2;
+}
+
+// keep the part of poly on one side of the line a→b
+function clip(poly, a, b, sign) {
+  const side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]));
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const cur = poly[i], prev = poly[(i + poly.length - 1) % poly.length];
+    const sc = side(cur), sp = side(prev);
+    const cross = () => {
+      const t = sp / (sp - sc);
+      return [prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])];
+    };
+    if (sc >= 0) {
+      if (sp < 0) out.push(cross());
+      out.push(cur);
+    } else if (sp >= 0) out.push(cross());
+  }
+  return out;
+}
+
+function centroid(poly) {
+  let x = 0, y = 0, a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length];
+    const c = x1 * y2 - x2 * y1;
+    a += c; x += (x1 + x2) * c; y += (y1 + y2) * c;
+  }
+  if (Math.abs(a) < 1e-6) return poly[0] || [0, 0];
+  return [x / (3 * a), y / (3 * a)];
+}
+
+function longLine(a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+  const k = 2000 / L;
+  return [[a[0] - dx * k, a[1] - dy * k], [a[0] + dx * k, a[1] + dy * k]];
+}
+
+function cutResult(poly, a, b) {
+  const total = area(poly);
+  const p1 = clip(poly, a, b, 1), p2 = clip(poly, a, b, -1);
+  const a1 = area(p1) / total * 100;
+  return { a1, a2: 100 - a1, p1, p2 };
+}
+
+// ===== Scoring =====
+const err = c => Math.abs(c.a1 - 50);
+const scoreFor = c => Math.max(0, Math.round(100 - err(c) * 8));
+function emojiFor(c) {
+  const e = err(c);
+  if (e < 0.5) return "🎯";
+  if (e < 2) return "🟩";
+  if (e < 5) return "🟨";
+  return "🟥";
+}
+const fmt = c => {
+  const lo = Math.min(c.a1, c.a2), hi = Math.max(c.a1, c.a2);
+  return lo.toFixed(1) + " / " + hi.toFixed(1);
+};
+
+// ===== Drawing =====
+function path(poly) {
+  ctx.beginPath();
+  poly.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.closePath();
+}
+
+function draw() {
+  ctx.fillStyle = "#0f1115";
+  ctx.fillRect(0, 0, W, H);
+  // dot grid
+  ctx.fillStyle = "#1e232c";
+  for (let x = 20; x < W; x += 40) for (let y = 20; y < H; y += 40) ctx.fillRect(x - 1, y - 1, 2, 2);
+
+  const poly = shapes[ri];
+  const cut = cuts[ri];
+
+  if (cut) {
+    path(cut.p1); ctx.fillStyle = "rgba(255,179,71,0.85)"; ctx.fill();
+    path(cut.p2); ctx.fillStyle = "rgba(90,209,160,0.85)"; ctx.fill();
+    const [l1, l2] = longLine(cut.a, cut.b);
+    ctx.strokeStyle = "#e8eaf0"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(l1[0], l1[1]); ctx.lineTo(l2[0], l2[1]); ctx.stroke();
+    ctx.font = "bold 20px system-ui"; ctx.textAlign = "center";
+    [[cut.p1, cut.a1], [cut.p2, cut.a2]].forEach(([p, v]) => {
+      const [x, y] = centroid(p);
+      ctx.fillStyle = "rgba(15,17,21,0.75)";
+      ctx.fillRect(x - 36, y - 18, 72, 28);
+      ctx.fillStyle = "#e8eaf0";
+      ctx.fillText(v.toFixed(1) + "%", x, y + 3);
+    });
+  } else {
+    path(poly);
+    ctx.fillStyle = "#ffb347"; ctx.fill();
+    if (dragA && dragB) {
+      const [l1, l2] = longLine(dragA, dragB);
+      ctx.save();
+      ctx.setLineDash([8, 8]);
+      ctx.strokeStyle = "rgba(232,234,240,0.9)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(l1[0], l1[1]); ctx.lineTo(l2[0], l2[1]); ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+// ===== Input =====
+cv.addEventListener("pointerdown", e => {
+  if (phase !== "cut") return;
+  const p = Daily.point(cv, e);
+  dragA = [p.x, p.y]; dragB = null;
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", e => {
+  if (phase !== "cut" || !dragA) return;
+  const p = Daily.point(cv, e);
+  dragB = [p.x, p.y];
+  draw();
+});
+cv.addEventListener("pointerup", () => {
+  if (phase !== "cut" || !dragA) return;
+  const a = dragA, b = dragB;
+  dragA = dragB = null;
+  if (!b || Math.hypot(b[0] - a[0], b[1] - a[1]) < 25) {
+    $("msg").textContent = "Drag a longer line across the shape.";
+    draw();
+    return;
+  }
+  const c = cutResult(shapes[ri], a, b);
+  if (Math.min(c.a1, c.a2) < 0.5) {
+    $("msg").textContent = "Missed! Your line has to go through the shape. Try again.";
+    draw();
+    return;
+  }
+  cuts[ri] = Object.assign(c, { a, b });
+  finishRound();
+});
+
+function finishRound() {
+  const c = cuts[ri];
+  $("msg").textContent = fmt(c) + "  ·  " + scoreFor(c) + " points";
+  if (ri < ROUNDS - 1) {
+    phase = "between";
+    $("nextBtn").classList.remove("hidden");
+  } else {
+    phase = "done";
+    if (mode === "daily") Daily.save(NAME, { cuts: cuts.map(c => [c.a, c.b]) });
+    showResult();
+  }
+  draw();
+}
+
+function showResult() {
+  const total = cuts.reduce((s, c) => s + scoreFor(c), 0);
+  $("total").textContent = total + " / " + ROUNDS * 100;
+  $("emojis").textContent = cuts.map(emojiFor).join("");
+  $("result").classList.remove("hidden");
+  $("nextBtn").classList.add("hidden");
+  $("practiceBtn").classList.remove("hidden");
+  if (mode === "daily") {
+    $("shareBtn").classList.remove("hidden");
+    Daily.countdown($("sub"), "Half");
+  } else {
+    $("shareBtn").classList.add("hidden");
+    Daily.stopCountdown();
+    $("sub").textContent = "Practice round. Your daily score is saved separately.";
+  }
+}
+
+$("nextBtn").onclick = () => {
+  ri++;
+  phase = "cut";
+  $("hud").textContent = "Shape " + (ri + 1) + " / " + ROUNDS;
+  $("msg").textContent = "Next shape. Cut it in half.";
+  $("nextBtn").classList.add("hidden");
+  draw();
+};
+
+$("shareBtn").onclick = () => {
+  const total = cuts.reduce((s, c) => s + scoreFor(c), 0);
+  const text = "Half #" + Daily.dayNum + "  " + total + "/" + ROUNDS * 100 + "\n" +
+    cuts.map(emojiFor).join("") + "\n" +
+    cuts.map(fmt).join("\n") + "\n" + (location.host || "dailyish");
+  Daily.share(text, $("shareBtn"));
+};
+
+$("practiceBtn").onclick = () => {
+  mode = "practice";
+  $("modeLabel").textContent = "· practice";
+  start(Daily.rng(Math.floor(Math.random() * 1e9)));
+};
+
+function start(rand) {
+  shapes = WEIRD.map(w => makeShape(rand, w));
+  ri = 0; cuts = []; phase = "cut"; dragA = dragB = null;
+  $("hud").textContent = "Shape 1 / " + ROUNDS;
+  $("msg").textContent = "Drag one straight line to cut the shape into two equal halves.";
+  $("result").classList.add("hidden");
+  $("shareBtn").classList.add("hidden");
+  $("practiceBtn").classList.add("hidden");
+  $("nextBtn").classList.add("hidden");
+  draw();
+}
+
+// ===== Boot =====
+start(Daily.rng(Daily.seedFor(NAME)));
+const saved = Daily.load(NAME);
+if (saved && saved.cuts) {
+  cuts = saved.cuts.map(([a, b], i) => Object.assign(cutResult(shapes[i], a, b), { a, b }));
+  ri = ROUNDS - 1;
+  phase = "done";
+  showResult();
+  $("msg").textContent = "You already cut today's shapes.";
+  draw();
+}
+</script>
+</body>
+</html>
