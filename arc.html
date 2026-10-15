@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arc · Dailyish</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="logo" href="index.html">daily<span>ish</span></a>
+      <nav><a href="index.html">All games</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="game-top">
+      <div><strong id="title">Arc #1</strong> <span id="modeLabel"></span></div>
+      <div id="hud">Round 1 / 3</div>
+    </div>
+
+    <canvas id="c" width="800" height="450"></canvas>
+
+    <div class="msg" id="msg">Watch the ball. It will disappear.</div>
+
+    <div class="result hidden" id="result">
+      <div class="big" id="total">0</div>
+      <div class="emojis" id="emojis"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="startBtn">Start</button>
+      <button class="btn hidden" id="nextBtn">Next round</button>
+      <button class="btn hidden" id="shareBtn">Share score</button>
+      <button class="btn ghost hidden" id="practiceBtn">Practice mode</button>
+    </div>
+  </main>
+
+<script>
+// ===== Settings =====
+const W = 800, H = 450;
+const GROUND = H - 40;     // ground line
+const X0 = 60;             // launch x
+const G = 600;             // gravity (px per s^2)
+const ROUNDS = 3;
+const VISIBLE = [0.42, 0.32, 0.22]; // fraction of flight you get to see
+const LAUNCH_DAY = Date.UTC(2026, 9, 15); // Arc #1
+
+// ===== Seeded random so everyone gets the same puzzle =====
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const now = new Date();
+const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+const todayKey = y * 10000 + (m + 1) * 100 + d;
+const dayNum = Math.max(1, Math.floor((Date.UTC(y, m, d) - LAUNCH_DAY) / 86400000) + 1);
+const STORE_KEY = "arc-" + todayKey;
+
+function makeRounds(rand) {
+  const list = [];
+  for (let i = 0; i < ROUNDS; i++) {
+    const T = 1.4 + rand() * 0.8;        // flight time
+    const L = 380 + rand() * 380;        // landing x
+    list.push({ T, L, vx: (L - X0) / T, vy: -G * T / 2, vis: VISIBLE[i] });
+  }
+  return list;
+}
+
+// ===== Storage (safe) =====
+function load() { try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; } }
+function save(v) { try { localStorage.setItem(STORE_KEY, JSON.stringify(v)); } catch (e) {} }
+
+// ===== Elements =====
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const $ = id => document.getElementById(id);
+$("title").textContent = "Arc #" + dayNum;
+
+// ===== State =====
+let mode = "daily";
+let rounds = [];
+let ri = 0;
+let scores = [];
+let phase = "idle"; // idle, flying, guess, reveal, between, done
+let t = 0;
+let lastTs = 0;
+let hoverX = null;
+let guessX = null;
+
+function pos(r, time) {
+  return { x: X0 + r.vx * time, y: GROUND + r.vy * time + 0.5 * G * time * time };
+}
+
+// ===== Drawing =====
+function drawScene() {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#151a24");
+  sky.addColorStop(1, "#0f1115");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // ground
+  ctx.fillStyle = "#1b2029";
+  ctx.fillRect(0, GROUND, W, H - GROUND);
+  ctx.strokeStyle = "#3a4150";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, GROUND); ctx.lineTo(W, GROUND); ctx.stroke();
+
+  // distance ticks
+  ctx.fillStyle = "#555d6e";
+  ctx.font = "12px system-ui";
+  ctx.textAlign = "center";
+  for (let x = 100; x < W; x += 100) {
+    ctx.fillRect(x - 1, GROUND, 2, 8);
+    ctx.fillText(x / 10 + "m", x, GROUND + 24);
+  }
+
+  // launcher
+  ctx.fillStyle = "#ffb347";
+  ctx.beginPath(); ctx.arc(X0, GROUND, 10, Math.PI, 0); ctx.fill();
+}
+
+function drawPath(r, from, to, dashed, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  if (dashed) ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  const steps = 60;
+  for (let i = 0; i <= steps; i++) {
+    const p = pos(r, from + (to - from) * i / steps);
+    i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBall(x, y, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawMarker(x, color, label) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x - 2, GROUND - 30, 4, 30);
+  ctx.beginPath();
+  ctx.moveTo(x, GROUND - 30); ctx.lineTo(x + 16, GROUND - 24); ctx.lineTo(x, GROUND - 18);
+  ctx.fill();
+  if (label) {
+    ctx.font = "bold 13px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(label, x, GROUND - 38);
+  }
+}
+
+function render() {
+  drawScene();
+  if (!rounds.length) return;
+  const r = rounds[ri];
+  const visEnd = r.vis * r.T;
+
+  if (phase === "flying") {
+    drawPath(r, 0, t, false, "rgba(255,179,71,0.5)");
+    const p = pos(r, t);
+    drawBall(p.x, p.y, "#ffb347");
+  }
+  if (phase === "guess") {
+    drawPath(r, 0, visEnd, false, "rgba(255,179,71,0.5)");
+    const p = pos(r, visEnd);
+    ctx.fillStyle = "#8a90a0";
+    ctx.font = "bold 22px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("?", p.x, p.y + 8);
+    if (hoverX !== null) drawMarker(hoverX, "rgba(232,234,240,0.6)");
+  }
+  if (phase === "reveal" || phase === "between" || phase === "done") {
+    drawPath(r, 0, visEnd, false, "rgba(255,179,71,0.5)");
+    drawPath(r, visEnd, Math.min(t, r.T), true, "rgba(90,209,160,0.8)");
+    drawMarker(guessX, "#e8eaf0", "You");
+    if (t >= r.T) {
+      drawMarker(r.L, "#5ad1a0", "Here");
+    } else {
+      const p = pos(r, t);
+      drawBall(p.x, p.y, "#5ad1a0");
+    }
+  }
+}
+
+// ===== Game loop =====
+function loop(ts) {
+  const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
+  lastTs = ts;
+  const r = rounds[ri];
+
+  if (phase === "flying") {
+    t += dt;
+    if (t >= r.vis * r.T) {
+      t = r.vis * r.T;
+      phase = "guess";
+      $("msg").textContent = "Where will it land? Tap the ground.";
+    }
+  } else if (phase === "reveal") {
+    t += dt * 1.6;
+    if (t >= r.T) { t = r.T; finishRound(); }
+  }
+
+  render();
+  if (phase === "flying" || phase === "reveal" || phase === "guess") requestAnimationFrame(loop);
+}
+
+function startRound() {
+  phase = "flying";
+  t = 0;
+  hoverX = null;
+  guessX = null;
+  $("hud").textContent = "Round " + (ri + 1) + " / " + ROUNDS;
+  $("msg").textContent = "Watch closely...";
+  $("nextBtn").classList.add("hidden");
+  $("startBtn").classList.add("hidden");
+  lastTs = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function scoreFor(err) { return Math.max(0, Math.round(100 - err / 4)); }
+
+function finishRound() {
+  const r = rounds[ri];
+  const err = Math.abs(guessX - r.L);
+  const s = scoreFor(err);
+  scores.push(s);
+  const meters = (err / 10).toFixed(1);
+  if (ri < ROUNDS - 1) {
+    phase = "between";
+    $("msg").textContent = "Off by " + meters + "m  ·  " + s + " points";
+    $("nextBtn").classList.remove("hidden");
+  } else {
+    phase = "done";
+    $("msg").textContent = "Off by " + meters + "m  ·  " + s + " points";
+    if (mode === "daily") save({ scores });
+    showResult();
+  }
+  render();
+}
+
+function emojiFor(s) {
+  if (s >= 90) return "🎯";
+  if (s >= 70) return "🟢";
+  if (s >= 40) return "🟡";
+  return "🔴";
+}
+
+function showResult() {
+  const total = scores.reduce((a, b) => a + b, 0);
+  $("total").textContent = total + " / " + (ROUNDS * 100);
+  $("emojis").textContent = scores.map(emojiFor).join("");
+  $("result").classList.remove("hidden");
+  $("nextBtn").classList.add("hidden");
+  $("startBtn").classList.add("hidden");
+  $("practiceBtn").classList.remove("hidden");
+  if (mode === "daily") {
+    $("shareBtn").classList.remove("hidden");
+    tickCountdown();
+  } else {
+    $("shareBtn").classList.add("hidden");
+    $("sub").textContent = "Practice round. Daily score is saved separately.";
+  }
+}
+
+function tickCountdown() {
+  if (mode !== "daily") return;
+  const n = new Date();
+  const mid = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1);
+  const s = Math.floor((mid - n) / 1000);
+  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+  const mm = String(Math.floor(s % 3600 / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  $("sub").textContent = "Next Arc in " + hh + ":" + mm + ":" + ss;
+  setTimeout(tickCountdown, 1000);
+}
+
+// ===== Input =====
+function canvasX(e) {
+  const rect = cv.getBoundingClientRect();
+  return Math.max(0, Math.min(W, (e.clientX - rect.left) * W / rect.width));
+}
+cv.addEventListener("pointermove", e => { if (phase === "guess") hoverX = canvasX(e); });
+cv.addEventListener("pointerdown", e => {
+  if (phase !== "guess") return;
+  guessX = canvasX(e);
+  phase = "reveal";
+  $("msg").textContent = "Let's see...";
+});
+
+$("startBtn").onclick = startRound;
+$("nextBtn").onclick = () => { ri++; startRound(); };
+
+$("practiceBtn").onclick = () => {
+  mode = "practice";
+  $("modeLabel").textContent = "· practice";
+  rounds = makeRounds(mulberry32(Math.floor(Math.random() * 1e9)));
+  ri = 0; scores = [];
+  $("result").classList.add("hidden");
+  $("shareBtn").classList.add("hidden");
+  $("practiceBtn").classList.add("hidden");
+  startRound();
+};
+
+$("shareBtn").onclick = async () => {
+  const total = scores.reduce((a, b) => a + b, 0);
+  const text = "Arc #" + dayNum + "  " + total + "/" + (ROUNDS * 100) + "\n" +
+    scores.map(emojiFor).join("") + "\n" + (location.host || "dailyish");
+  try {
+    if (navigator.share) { await navigator.share({ text }); return; }
+    await navigator.clipboard.writeText(text);
+    $("shareBtn").textContent = "Copied!";
+  } catch (e) {
+    prompt("Copy your score", text);
+  }
+  setTimeout(() => { $("shareBtn").textContent = "Share score"; }, 1500);
+};
+
+// ===== Boot =====
+rounds = makeRounds(mulberry32(todayKey));
+const saved = load();
+if (saved && saved.scores) {
+  scores = saved.scores;
+  ri = ROUNDS - 1;
+  phase = "done";
+  $("msg").textContent = "You already played today's Arc.";
+  drawScene();
+  showResult();
+} else {
+  render();
+}
+</script>
+</body>
+</html>
