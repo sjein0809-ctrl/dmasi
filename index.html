@@ -3,67 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dailyish · Daily mini games</title>
-  <meta name="description" content="New tiny games every day. One minute, share your score.">
-  <link rel="stylesheet" href="style.css?v=4">
+  <title>dailyish</title>
+  <meta name="description" content="Three small puzzles, new every midnight.">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <header>
     <div class="wrap">
       <a class="logo" href="index.html">daily<span>ish</span></a>
-      <nav>
-        <a href="index.html" class="active">Games</a>
-      </nav>
+      <span class="dateline" id="dateline"></span>
     </div>
   </header>
 
   <main class="wrap">
-    <section class="hero">
-      <span class="chip"><span class="dot"></span><span id="today">Today's puzzles are live</span></span>
-      <h1>One minute.<br><em>Every day.</em></h1>
-      <p>Tiny daily games. Everyone gets the same puzzle. Share your score.</p>
+    <section class="intro">
+      <h1>Three small puzzles, new every midnight.</h1>
+      <p>Everyone gets the same ones. Play, then compare with your friends.</p>
     </section>
 
-    <div class="section-title">
-      <h2>Today's games</h2>
-      <span id="doneCount"></span>
-    </div>
-    <section class="grid">
-      <a class="card" href="peak.html" data-game="peak" style="--c:#6fb6ff">
-        <div class="icon">⛰️</div>
-        <h2>Peak</h2>
-        <p>A mountain hides in the fog. Find the summit in 7 probes.</p>
-        <span class="tag">PLAY TODAY</span>
-      </a>
-
-      <a class="card" href="half.html" data-game="half" style="--c:#ff8a6b">
-        <div class="icon">✂️</div>
-        <h2>Half</h2>
-        <p>One straight line. Cut the shape exactly in half.</p>
-        <span class="tag">PLAY TODAY</span>
-      </a>
-
-      <a class="card" href="arc.html" data-game="arc" style="--c:#b48cff">
-        <div class="icon">🎯</div>
-        <h2>Arc</h2>
-        <p>The ball vanishes mid flight. Guess where it lands.</p>
-        <span class="tag">PLAY TODAY</span>
-      </a>
-    </section>
-
-    <div class="section-title">
-      <h2>Attendance</h2>
-      <span>Check in every day to keep your streak</span>
-    </div>
-    <section class="panel attend">
-      <div class="streak">
-        <div class="flame">🔥 Current streak<b><span id="streak">0</span><small>days</small></b></div>
-        <div class="stats">
-          <div class="stat"><div id="best">0</div><span>Best streak</span></div>
-          <div class="stat"><div id="totalDays">0</div><span>Days total</span></div>
+    <h2 class="section">Today</h2>
+    <p class="section-note" id="doneCount"></p>
+    <section class="games">
+      <a class="box game" href="codle.html" data-game="codle" style="--c: var(--blue)">
+        <span class="num">1</span>
+        <div>
+          <h3>Codle</h3>
+          <p>Can you guess the secret word with the help of AI? At each guess it will tell you how close you are to the answer.</p>
+          <div class="scores">Today <b data-today>–</b> &nbsp;·&nbsp; Best <b data-best>–</b></div>
         </div>
+        <span class="play">Play</span>
+      </a>
+
+      <a class="box game" href="half.html" data-game="half" style="--c: var(--yellow)">
+        <span class="num">2</span>
+        <div>
+          <h3>Half</h3>
+          <p>One straight line. Cut 5 weird shapes exactly in half.</p>
+          <div class="scores">Today <b data-today>–</b> &nbsp;·&nbsp; Best <b data-best>–</b></div>
+        </div>
+        <span class="play">Play</span>
+      </a>
+
+      <a class="box game" href="arc.html" data-game="arc" style="--c: var(--green)">
+        <span class="num">3</span>
+        <div>
+          <h3>Arc</h3>
+          <p>The ball vanishes mid flight. Guess where it lands.</p>
+          <div class="scores">Today <b data-today>–</b> &nbsp;·&nbsp; Best <b data-best>–</b></div>
+        </div>
+        <span class="play">Play</span>
+      </a>
+    </section>
+
+    <h2 class="section">Attendance</h2>
+    <p class="section-note">Come back every day and keep the streak going.</p>
+    <section class="box attend">
+      <div>
+        <p class="streak-line"><b id="streak">0</b><span id="streakText">days in a row</span></p>
+        <dl>
+          <div><dt>Best streak</dt><dd id="best">0</dd></div>
+          <div><dt>Days total</dt><dd id="totalDays">0</dd></div>
+        </dl>
         <button class="btn" id="checkBtn">Check in for today</button>
-        <p class="hint">Playing any game also counts. Saved on this device.</p>
+        <p class="hint">Playing any game counts too. Saved on this device only.</p>
       </div>
       <div>
         <div class="cal-head">
@@ -72,29 +74,26 @@
           <button id="nextM" aria-label="Next month">›</button>
         </div>
         <div class="cal" id="cal"></div>
-        <div class="legend"><span><i></i>Checked in</span><span>★ All 3 games done</span></div>
+        <div class="legend">Circled = you showed up. ★ = all three games done.</div>
       </div>
     </section>
   </main>
 
   <footer>
     <div class="wrap">
-      <p class="idea">💡 Got an idea for a new game? Send it to <a href="mailto:sjein0809@gmail.com?subject=dailyish%20game%20idea">sjein0809@gmail.com</a></p>
+      <p class="idea">Got an idea for a new game? Send it to <a href="mailto:sjein0809@gmail.com?subject=dailyish%20game%20idea">sjein0809@gmail.com</a></p>
       <div class="foot-row">
-        <span>dailyish · new puzzles every midnight</span>
-        <a class="insta" href="https://www.instagram.com/s1wptjg_/" target="_blank" rel="noopener">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
-          @s1wptjg_
-        </a>
+        <span>New games in <b data-next>--h --m --s</b></span>
+        <a class="insta" href="https://www.instagram.com/s1wptjg_/" target="_blank" rel="noopener">Instagram @s1wptjg_</a>
       </div>
     </div>
   </footer>
 
-<script src="common.js"></script>
+<script src="common.js?v=2"></script>
 <script>
 const $ = id => document.getElementById(id);
 const CHECK_KEY = "dailyish-checkins";
-const GAMES = ["peak", "half", "arc"];
+const GAMES = ["codle", "half", "arc"];
 
 // ===== Dates as yyyymmdd numbers =====
 const keyOf = d => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
@@ -110,11 +109,12 @@ function writeChecks(set) {
   try { localStorage.setItem(CHECK_KEY, JSON.stringify([...set])); } catch (e) {}
 }
 // days a daily game was finished, from each game's own save: "<game>-yyyymmdd"
+// (peak is a retired game; its old days still count as attendance)
 function readPlayed() {
   const played = {};
   try {
     for (let i = 0; i < localStorage.length; i++) {
-      const m = /^(arc|peak|half2?)-(\d{8})$/.exec(localStorage.key(i));
+      const m = /^(arc|peak|codle|half\d?)-(\d{8})$/.exec(localStorage.key(i));
       if (!m) continue;
       const game = m[1].startsWith("half") ? "half" : m[1];
       (played[m[2]] = played[m[2]] || new Set()).add(game);
@@ -126,20 +126,39 @@ function readPlayed() {
 let checks = readChecks();
 let played = readPlayed();
 const attended = k => checks.has(k) || !!played[k];
+const playedAll = k => !!played[k] && GAMES.every(g => played[k].has(g));
 
-// ===== Today's cards =====
+// ===== Today's games =====
+// how each game's score reads, and which way is better
+const FORMAT = {
+  codle: v => v + (v === 1 ? " guess" : " guesses"),
+  half: v => v + " / 500",
+  arc: v => v + " / 300",
+};
+const LOWER_IS_BETTER = { codle: true };
+
+const allScores = Daily.allScores();
 let done = 0;
-document.querySelectorAll(".card[data-game]").forEach(card => {
-  if (played[today] && played[today].has(card.dataset.game)) {
+document.querySelectorAll(".game[data-game]").forEach(card => {
+  const game = card.dataset.game;
+  const mine = allScores[game] || {};
+  const vals = Object.values(mine);
+  if (mine[today] !== undefined) card.querySelector("[data-today]").textContent = FORMAT[game](mine[today]);
+  if (vals.length) {
+    const best = LOWER_IS_BETTER[game] ? Math.min(...vals) : Math.max(...vals);
+    card.querySelector("[data-best]").textContent = FORMAT[game](best);
+  }
+  if (played[today] && played[today].has(game)) {
     done++;
-    const tag = card.querySelector(".tag");
-    tag.textContent = "DONE ✓";
+    const tag = card.querySelector(".play");
+    tag.textContent = "Done";
     tag.classList.add("done");
   }
 });
-$("doneCount").textContent = done + " / " + GAMES.length + " done";
-$("today").textContent = "Puzzle #" + Daily.dayNum + " · " +
-  new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+$("doneCount").textContent = done === GAMES.length ? "All done for today. See you tomorrow."
+  : done + " of " + GAMES.length + " played";
+$("dateline").textContent = "No. " + Daily.dayNum + " · " +
+  new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
 // ===== Streaks =====
 function streaks() {
@@ -173,17 +192,29 @@ function renderCalendar(popKey) {
     el.className = "dow"; el.textContent = d;
     cal.appendChild(el);
   });
-  for (let i = 0; i < first.getDay(); i++) cal.appendChild(document.createElement("div"));
+  for (let i = 0; i < first.getDay(); i++) {
+    const el = document.createElement("div");
+    el.className = "pad";
+    cal.appendChild(el);
+  }
   for (let d = 1; d <= days; d++) {
     const k = first.getFullYear() * 10000 + (first.getMonth() + 1) * 100 + d;
     const el = document.createElement("div");
     el.className = "day";
     el.textContent = d;
+    el.style.setProperty("--tilt", ((k * 37) % 23 - 11) + "deg"); // each stamp lands a bit crooked
     if (k > today) el.classList.add("future");
     if (k === today) el.classList.add("today");
     if (attended(k)) el.classList.add("on");
-    if (played[k] && played[k].size >= GAMES.length) el.classList.add("all");
+    if (playedAll(k)) el.classList.add("all");
     if (k === popKey) el.classList.add("pop");
+    cal.appendChild(el);
+  }
+  // finish the last row so the grid lines close up
+  const used = 7 + first.getDay() + days;
+  for (let i = 0; i < (7 - used % 7) % 7; i++) {
+    const el = document.createElement("div");
+    el.className = "pad";
     cal.appendChild(el);
   }
 }
@@ -191,11 +222,12 @@ function renderCalendar(popKey) {
 function render(popKey) {
   const s = streaks();
   $("streak").textContent = s.cur;
+  $("streakText").textContent = s.cur === 1 ? "day in a row" : "days in a row";
   $("best").textContent = s.best;
   $("totalDays").textContent = s.total;
   const btn = $("checkBtn");
   if (attended(today)) {
-    btn.textContent = "Checked in today ✓";
+    btn.textContent = "Checked in ✓";
     btn.disabled = true;
   }
   renderCalendar(popKey);

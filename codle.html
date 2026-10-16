@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codle · dailyish</title>
+  <link rel="stylesheet" href="style.css?v=7">
+  <style>
+    .guess-form { display: flex; gap: 8px; margin: 4px 0 18px; }
+    .guess-form input {
+      flex: 1;
+      min-width: 0;
+      font: inherit;
+      font-size: 18px;
+      padding: 11px 14px;
+      border: 1.5px solid var(--ink);
+      border-radius: 4px;
+      background: var(--sheet);
+      color: var(--ink);
+    }
+    .guess-form input:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+    .rows { display: grid; gap: 6px; }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(90px, 1.2fr) 2fr 64px;
+      align-items: center;
+      gap: 12px;
+      padding: 7px 12px;
+      background: var(--sheet);
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      font-size: 16px;
+    }
+    .row .w { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+    .row .w small { font-weight: 400; color: var(--faint); margin-left: 6px; }
+    .row .bar { height: 10px; background: #ebe4d5; border-radius: 2px; overflow: hidden; }
+    .row .bar i { display: block; height: 100%; }
+    .row .r { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+    .row.latest { border: 1.5px solid var(--ink); }
+    .row.win { background: #e3f1ea; border-color: var(--green); }
+    #last { margin-bottom: 14px; }
+    #last:empty { display: none; }
+    .how { color: var(--ink-2); font-size: 15px; margin: 0 0 14px; }
+    .closest { margin: 4px 0 24px; }
+    .closest h3 { font-family: var(--serif); font-size: 18px; margin: 0 0 8px; }
+    .closest p { margin: 0; color: var(--ink-2); line-height: 1.8; }
+    .codle-msg { min-height: 26px; margin: -8px 0 12px; color: var(--red); font-size: 15px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="logo" href="index.html">daily<span>ish</span></a>
+      <nav><a href="index.html">← All games</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="game-top">
+      <div><strong id="title">Codle</strong> <span id="modeLabel"></span></div>
+      <div id="hud">0 guesses</div>
+    </div>
+
+    <p class="how">Guess the secret word. After each guess you see its rank: <b>#1</b> is the answer, <b>#2</b> is the closest word to it, and so on. Closeness comes from an AI word model, so it's about meaning, not spelling.</p>
+
+    <form class="guess-form" id="form" autocomplete="off">
+      <input id="input" type="text" placeholder="Loading words…" disabled
+             autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+      <button class="btn" id="guessBtn" disabled>Guess</button>
+    </form>
+    <div class="codle-msg" id="note"></div>
+
+    <div class="result hidden" id="result">
+      <div class="big" id="total"></div>
+      <div class="emojis" id="emojis"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+
+    <div class="actions" style="padding-bottom: 18px">
+      <button class="btn ghost" id="hintBtn" disabled>Hint</button>
+      <button class="btn ghost" id="giveUpBtn" disabled>Give up</button>
+      <button class="btn hidden" id="shareBtn">Share score</button>
+      <button class="btn ghost hidden" id="practiceBtn">Practice mode</button>
+    </div>
+
+    <div class="closest hidden" id="closest"></div>
+    <div id="last" class="rows"></div>
+    <div id="list" class="rows" style="padding-bottom: 40px"></div>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p class="idea">Got an idea for a new game? Send it to <a href="mailto:sjein0809@gmail.com?subject=dailyish%20game%20idea">sjein0809@gmail.com</a></p>
+      <div class="foot-row">
+        <span>New games in <b data-next>--h --m --s</b></span>
+        <a class="insta" href="https://www.instagram.com/s1wptjg_/" target="_blank" rel="noopener">Instagram @s1wptjg_</a>
+      </div>
+    </div>
+  </footer>
+
+<script src="common.js?v=2"></script>
+<script>
+// Word data: codle-words.txt (most common first) + codle-vecs.bin (100 numbers per word, 4 bits each).
+// Closeness = cosine similarity between word vectors (GloVe, trained on Wikipedia).
+const DIM = 100;
+const NAME = "codle";          // final result (counts as "played" on the home page)
+const PROGRESS = "codleprog";  // guesses so far, so a reload doesn't lose them
+const TARGETS = [3423,5276,27863,41,5353,7726,488,1478,636,3363,2548,5936,2603,480,3208,56,7306,10299,1187,140,6080,2215,1048,5789,3150,5695,2109,6059,12297,9092,232,8,5386,348,379,2216,434,994,12141,2751,57,4600,596,5569,8656,4623,97,835,77,4444,5746,8293,2330,143,6170,4869,183,1052,270,15092,12785,38,4393,81,644,3535,940,3888,1808,1885,2867,8592,9045,13315,3741,1481,21,3448,5153,2400,1354,8556,1580,6998,369,1380,2241,6015,8301,8580,2593,1151,4196,760,3112,918,5897,2566,5232,1093,5319,1075,6315,1646,1747,394,291,713,586,6887,3562,1846,9863,1283,1807,105,11322,3908,2649,9872,3768,95,1428,11695,1542,15506,645,2090,343,1739,1596,5418,6800,737,772,3779,860,8820,2670,10636,3177,471,1409,1563,2033,1271,6869,563,180,2553,5058,4664,5168,19475,3884,235,79,4712,1371,5150,2355,2953,4827,4761,4179,14669,7912,33,2210,35,1836,341,8522,6677,1020,5691,483,5894,19118,10230,11383,497,3074,2555,8519,5123,4689,3733,3102,6020,17545,1899,1544,7563,6054,1503,5908,10036,3666,3467,113,1595,199,4508,2859,6209,7746,1866,7755,553,437,3035,1421,7101,405,9615,3433,9982,8520,6694,1483,930,217,655,534,574,592,4354,1168,2990,5450,5216,2065,6722,1751,7971,12761,2082,3451,11468,803,390,6764,13275,1970,2359,2978,1972,4416,2421,2699,13090,1405,436,393,1828,1227,16573,1069,7278,477,2449,1997,12,632,2715,10102,3453,15819,16580,484,5621,1230,1643,4749,13265,2285,3697,3836,1244,3553,6550,3761,1220,2370,2793,6096,598,87,820,884,172,9464];
+const NO_HINT = new Set([135, 610, 831, 1004, 1157, 1249, 1297, 1373, 1504, 1670, 1767, 1963, 2155, 2583, 3546, 3762, 4250, 4871, 5111, 5968, 6883, 6885, 7236, 8197, 8886, 10950, 12367, 13819, 14831, 15256, 22309, 23398, 28003, 29484, 31731, 32446, 32464]);
+
+const $ = id => document.getElementById(id);
+$("title").textContent = "Codle #" + Daily.dayNum;
+
+let words, index, vec, norm;
+let target, rankOf, order;
+let mode = "daily", guesses = [], hints = 0, over = false, gaveUp = false;
+
+// ===== Data =====
+async function loadData() {
+  const get = (url, how) => fetch(url).then(r => { if (!r.ok) throw new Error(url); return r[how](); });
+  const [txt, buf] = await Promise.all([get("codle-words.txt?v=1", "text"), get("codle-vecs.bin?v=1", "arrayBuffer")]);
+  words = txt.split("\n");
+  index = new Map(words.map((w, i) => [w, i]));
+  const bytes = new Uint8Array(buf);
+  vec = new Int8Array(words.length * DIM);
+  for (let i = 0; i < bytes.length; i++) {
+    vec[2 * i] = (bytes[i] >> 4) - 8;
+    vec[2 * i + 1] = (bytes[i] & 15) - 8;
+  }
+  norm = new Float32Array(words.length);
+  for (let w = 0; w < words.length; w++) {
+    let s = 0;
+    for (let k = w * DIM; k < w * DIM + DIM; k++) s += vec[k] * vec[k];
+    norm[w] = Math.sqrt(s) || 1;
+  }
+}
+
+// rank every word by closeness to the target: rankOf[word] = 1 for the target itself
+function rankAll(t) {
+  const n = words.length, sim = new Float32Array(n), base = t * DIM;
+  for (let w = 0; w < n; w++) {
+    let d = 0;
+    for (let k = 0; k < DIM; k++) d += vec[base + k] * vec[w * DIM + k];
+    sim[w] = d / (norm[w] * norm[t]);
+  }
+  sim[t] = 2; // the answer always comes first
+  order = Array.from({ length: n }, (_, i) => i).sort((a, b) => sim[b] - sim[a]);
+  rankOf = new Int32Array(n);
+  order.forEach((w, r) => { rankOf[w] = r + 1; });
+}
+
+// ===== Look =====
+function colorFor(rank) {
+  if (rank === 1) return "var(--green)";
+  if (rank <= 300) return "var(--green)";
+  if (rank <= 1500) return "var(--yellow)";
+  return "var(--red)";
+}
+function emojiFor(rank) {
+  if (rank === 1) return "🎯";
+  if (rank <= 300) return "🟩";
+  if (rank <= 1500) return "🟨";
+  return "🟥";
+}
+function widthFor(rank) {
+  return Math.max(3, 100 * (1 - Math.log(rank) / Math.log(words.length)));
+}
+
+function rowEl(g, latest) {
+  const r = rankOf[g.w];
+  const el = document.createElement("div");
+  el.className = "row" + (latest ? " latest" : "") + (r === 1 ? " win" : "");
+  const w = document.createElement("span");
+  w.className = "w";
+  w.textContent = words[g.w];
+  if (g.hint) { const s = document.createElement("small"); s.textContent = "hint"; w.appendChild(s); }
+  const bar = document.createElement("span");
+  bar.className = "bar";
+  const fill = document.createElement("i");
+  fill.style.width = widthFor(r) + "%";
+  fill.style.background = colorFor(r);
+  bar.appendChild(fill);
+  const rk = document.createElement("span");
+  rk.className = "r";
+  rk.textContent = "#" + r;
+  el.append(w, bar, rk);
+  return el;
+}
+
+function render() {
+  const n = guesses.length;
+  $("hud").textContent = n + (n === 1 ? " guess" : " guesses") + (hints ? " · " + hints + (hints === 1 ? " hint" : " hints") : "");
+  $("last").innerHTML = "";
+  if (n && !over) $("last").appendChild(rowEl(guesses[n - 1], true));
+  $("list").innerHTML = "";
+  [...guesses].sort((a, b) => rankOf[a.w] - rankOf[b.w])
+    .forEach(g => $("list").appendChild(rowEl(g, !over && g === guesses[n - 1])));
+}
+
+// ===== Playing =====
+function bestRank() {
+  return guesses.reduce((m, g) => Math.min(m, rankOf[g.w]), words.length + 1);
+}
+
+function add(w, hint) {
+  guesses.push({ w, hint: !!hint });
+  if (hint) hints++;
+  if (mode === "daily") Daily.save(PROGRESS, { g: guesses.map(g => g.hint ? -1 - g.w : g.w) });
+  if (rankOf[w] === 1) finish(false);
+  render();
+}
+
+function guess(raw) {
+  const text = raw.trim().toLowerCase();
+  $("note").textContent = "";
+  if (!text) return;
+  const w = index.get(text);
+  if (w === undefined) {
+    $("note").textContent = "\"" + text + "\" isn't in the word list. Try another word.";
+    return;
+  }
+  if (guesses.some(g => g.w === w)) {
+    $("note").textContent = "You already tried \"" + text + "\" (#" + rankOf[w] + ").";
+    return;
+  }
+  add(w, false);
+}
+
+// a word about halfway between your best guess and the answer
+function hint() {
+  const best = Math.min(bestRank(), 1000);
+  let r = Math.max(2, Math.floor(best / 2));
+  const used = new Set(guesses.map(g => g.w));
+  for (; r < order.length; r++) {
+    const w = order[r - 1];
+    if (!used.has(w) && !NO_HINT.has(w)) { add(w, true); return; }
+  }
+}
+
+function finish(quit) {
+  over = true;
+  gaveUp = quit;
+  $("input").disabled = $("guessBtn").disabled = $("hintBtn").disabled = $("giveUpBtn").disabled = true;
+  $("hintBtn").classList.add("hidden");
+  $("giveUpBtn").classList.add("hidden");
+  const n = guesses.length;
+  if (quit) {
+    $("total").textContent = "It was \"" + words[target] + "\"";
+    $("emojis").textContent = "";
+  } else {
+    $("total").textContent = n + (n === 1 ? " guess" : " guesses");
+    $("emojis").textContent = summary();
+  }
+  $("result").classList.remove("hidden");
+  $("practiceBtn").classList.remove("hidden");
+
+  // the ten words closest to the answer
+  const near = order.slice(1, 11).map(w => words[w]).join(", ");
+  $("closest").innerHTML = "";
+  const h = document.createElement("h3");
+  h.textContent = "Closest words to \"" + words[target] + "\"";
+  const p = document.createElement("p");
+  p.textContent = near;
+  $("closest").append(h, p);
+  $("closest").classList.remove("hidden");
+
+  if (mode === "daily") {
+    Daily.save(NAME, { n, hints, gaveUp: quit });
+    if (!quit) Daily.record("codle", n);
+    if (!quit) $("shareBtn").classList.remove("hidden");
+    Daily.countdown($("sub"), "Codle");
+  } else {
+    $("shareBtn").classList.add("hidden");
+    Daily.stopCountdown();
+    $("sub").textContent = "Practice word. Your daily score is saved separately.";
+  }
+}
+
+function summary() {
+  const c = { "🟩": 0, "🟨": 0, "🟥": 0 };
+  guesses.forEach(g => { const e = emojiFor(rankOf[g.w]); if (e in c) c[e]++; });
+  return Object.entries(c).filter(([, v]) => v).map(([e, v]) => e + " " + v).join("   ");
+}
+
+function start(t) {
+  target = t;
+  rankAll(t);
+  guesses = []; hints = 0; over = false; gaveUp = false;
+  $("input").disabled = $("guessBtn").disabled = $("hintBtn").disabled = $("giveUpBtn").disabled = false;
+  $("hintBtn").classList.remove("hidden");
+  $("giveUpBtn").classList.remove("hidden");
+  $("input").placeholder = "Type a word";
+  $("result").classList.add("hidden");
+  $("closest").classList.add("hidden");
+  $("shareBtn").classList.add("hidden");
+  $("practiceBtn").classList.add("hidden");
+  $("note").textContent = "";
+  render();
+}
+
+// ===== Buttons =====
+$("form").onsubmit = e => {
+  e.preventDefault();
+  if (over) return;
+  guess($("input").value);
+  $("input").value = "";
+  $("input").focus();
+};
+$("hintBtn").onclick = () => { if (!over) hint(); };
+$("giveUpBtn").onclick = () => {
+  if (over || !confirm("Give up and see today's word?")) return;
+  finish(true);
+  render();
+};
+$("shareBtn").onclick = () => {
+  const n = guesses.length;
+  const text = "Codle #" + Daily.dayNum + "  got it in " + n + (n === 1 ? " guess" : " guesses") +
+    (hints ? " (" + hints + (hints === 1 ? " hint" : " hints") + ")" : "") + "\n" +
+    summary() + "\n" + (location.host || "dailyish");
+  Daily.share(text, $("shareBtn"));
+};
+$("practiceBtn").onclick = () => {
+  mode = "practice";
+  $("modeLabel").textContent = "· practice";
+  start(TARGETS[Math.floor(Math.random() * TARGETS.length)]);
+  $("input").focus();
+};
+
+// ===== Boot =====
+loadData().then(() => {
+  start(TARGETS[(Daily.dayNum - 1) % TARGETS.length]);
+  const prog = Daily.load(PROGRESS);
+  if (prog && prog.g) {
+    prog.g.forEach(x => { guesses.push(x < 0 ? { w: -1 - x, hint: true } : { w: x, hint: false }); if (x < 0) hints++; });
+  }
+  const fin = Daily.load(NAME);
+  if (fin) {
+    finish(!!fin.gaveUp);
+    $("note").textContent = "";
+  }
+  render();
+}).catch(() => {
+  $("input").placeholder = "Couldn't load the word list";
+  $("note").textContent = "The word list didn't load. Check your connection and refresh.";
+});
+</script>
+</body>
+</html>

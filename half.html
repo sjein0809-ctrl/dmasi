@@ -3,26 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Half · Dailyish</title>
-  <link rel="stylesheet" href="style.css?v=4">
+  <title>Half · dailyish</title>
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <header>
     <div class="wrap">
       <a class="logo" href="index.html">daily<span>ish</span></a>
-      <nav><a href="index.html">All games</a></nav>
+      <nav><a href="index.html">← All games</a></nav>
     </div>
   </header>
 
   <main class="wrap">
     <div class="game-top">
       <div><strong id="title">Half #1</strong> <span id="modeLabel"></span></div>
-      <div id="hud">Shape 1 / 3</div>
+      <div id="hud">Shape 1 / 5</div>
     </div>
 
     <canvas id="c" width="800" height="500" style="touch-action:none"></canvas>
 
     <div class="msg" id="msg">Drag one straight line to cut the shape into two equal halves.</div>
+
+    <div class="review hidden" id="review"></div>
 
     <div class="result hidden" id="result">
       <div class="big" id="total"></div>
@@ -39,22 +41,20 @@
 
   <footer>
     <div class="wrap">
-      <p class="idea">💡 Got an idea for a new game? Send it to <a href="mailto:sjein0809@gmail.com?subject=dailyish%20game%20idea">sjein0809@gmail.com</a></p>
+      <p class="idea">Got an idea for a new game? Send it to <a href="mailto:sjein0809@gmail.com?subject=dailyish%20game%20idea">sjein0809@gmail.com</a></p>
       <div class="foot-row">
-        <span>dailyish · new puzzles every midnight</span>
-        <a class="insta" href="https://www.instagram.com/s1wptjg_/" target="_blank" rel="noopener">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
-          @s1wptjg_
-        </a>
+        <span>New games in <b data-next>--h --m --s</b></span>
+        <a class="insta" href="https://www.instagram.com/s1wptjg_/" target="_blank" rel="noopener">Instagram @s1wptjg_</a>
       </div>
     </div>
   </footer>
 
-<script src="common.js"></script>
+<script src="common.js?v=2"></script>
 <script>
 const W = 800, H = 500;
-const ROUNDS = 3;
-const NAME = "half2"; // bumped when the shape generator changed, so old saves don't replay on new shapes
+const ROUNDS = 5;
+const LEVELS = [0, 1, 1, 2, 2]; // how strange each round's shape is
+const NAME = "half3"; // bumped when shapes/rounds change, so old saves don't replay on new shapes
 
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
@@ -67,7 +67,8 @@ let shapes, ri, cuts, phase, dragA, dragB;
 // ===== Shape generation =====
 // A shape is a list of parts in "unit" space (main body ~1 unit across),
 // unioned together, with "sub" parts cut out (bites, holes).
-// Round 0 = odd, round 1 = odd + bites/holes, round 2 = combos + islands.
+// Level 0 = odd, 1 = odd + bites/holes, 2 = two shapes mashed together + bites.
+// Every shape ends up as one connected piece (holes are fine).
 
 const TAU = Math.PI * 2;
 
@@ -144,7 +145,7 @@ function makeParts(rand, level) {
   if (level === 2) {
     const before = parts.length;
     families[pick(pool)]();
-    const ox = R(-0.9, 0.9), oy = R(-0.6, 0.6), s = R(0.6, 0.85);
+    const ox = R(-0.6, 0.6), oy = R(-0.4, 0.4), s = R(0.6, 0.85);
     for (let i = before; i < parts.length; i++) {
       const p = parts[i];
       const tr = ([x, y]) => [x * s + ox, y * s + oy];
@@ -168,14 +169,6 @@ function makeParts(rand, level) {
     }
   }
 
-  // level 2: one or two separate islands
-  if (level === 2) {
-    const n = 1 + Math.floor(rand() * 2);
-    for (let i = 0; i < n; i++) {
-      const a = R(0, TAU), d = R(1.9, 2.4), r = R(0.18, 0.4);
-      parts.push({ t: "ellipse", x: Math.cos(a) * d, y: Math.sin(a) * d * 0.6, rx: r, ry: r * R(0.7, 1.3), rot: 0 });
-    }
-  }
   return parts;
 }
 
@@ -219,6 +212,45 @@ function tinted(mask, color) {
   return c;
 }
 
+// Label connected pieces (solid pixels, 4-neighbour) and find the biggest one.
+function largestPiece(alpha) {
+  const lab = new Int32Array(W * H), stack = new Int32Array(W * H);
+  let n = 0, best = 0, bestSize = 0, all = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (alpha[i] < 128 || lab[i]) continue;
+    lab[i] = ++n;
+    let sp = 0, size = 0;
+    stack[sp++] = i;
+    while (sp) {
+      const j = stack[--sp], x = j % W;
+      size += alpha[j];
+      const nb = [x > 0 ? j - 1 : -1, x < W - 1 ? j + 1 : -1, j - W, j + W];
+      for (const k of nb)
+        if (k >= 0 && k < W * H && !lab[k] && alpha[k] >= 128) { lab[k] = n; stack[sp++] = k; }
+    }
+    all += size;
+    if (size > bestSize) { bestSize = size; best = n; }
+  }
+  return { lab, best, otherFrac: all ? 1 - bestSize / all : 0 };
+}
+
+// Erase everything that isn't part of the biggest piece (keeps its soft edge pixels).
+function pruneTo(alpha, { lab, best }) {
+  for (let i = 0; i < W * H; i++) {
+    if (!alpha[i]) continue;
+    if (alpha[i] >= 128) { if (lab[i] !== best) alpha[i] = 0; continue; }
+    const x = i % W;
+    let near = false;
+    for (let dy = -W; dy <= W && !near; dy += W)
+      for (let dx = -1; dx <= 1; dx++) {
+        if ((x === 0 && dx < 0) || (x === W - 1 && dx > 0)) continue;
+        const k = i + dy + dx;
+        if (k >= 0 && k < W * H && lab[k] === best) { near = true; break; }
+      }
+    if (!near) alpha[i] = 0;
+  }
+}
+
 function makeShape(rand, level) {
   for (let attempt = 0; ; attempt++) {
     const parts = makeParts(rand, level);
@@ -236,21 +268,33 @@ function makeShape(rand, level) {
     parts.forEach(p => drawPart(g, p));
 
     // per-pixel coverage, used for exact-ish area measuring
-    const data = g.getImageData(0, 0, W, H).data;
+    const img = g.getImageData(0, 0, W, H), data = img.data;
     const alpha = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) alpha[i] = data[i * 4 + 3];
+
+    // must be one piece: reroll if a bite or offset split it (same rand stream, so still deterministic),
+    // and as a last resort keep only the biggest piece
+    const piece = largestPiece(alpha);
+    if (piece.otherFrac > 0.002 && attempt < 15) continue;
+    pruneTo(alpha, piece);
+    for (let i = 0; i < W * H; i++) data[i * 4 + 3] = alpha[i];
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "copy";
+    g.putImageData(img, 0, 0);
+
     let total = 0, bx0 = W, by0 = H, bx1 = 0, by1 = 0;
     for (let i = 0; i < W * H; i++) {
-      const a = data[i * 4 + 3];
+      const a = alpha[i];
       if (!a) continue;
-      alpha[i] = a; total += a;
+      total += a;
       const x = i % W, y = (i / W) | 0;
       if (x < bx0) bx0 = x; if (x > bx1) bx1 = x;
       if (y < by0) by0 = y; if (y > by1) by1 = y;
     }
-    // too small after bites? roll again (still deterministic: same rand stream)
-    if (total < W * H * 255 * 0.07 && attempt < 6) continue;
+    // too small after bites? roll again
+    if (total < W * H * 255 * 0.07 && attempt < 15) continue;
     return { mask, alpha, total, box: [bx0, by0, bx1, by1],
-             orange: tinted(mask, "#ffb347"), a: tinted(mask, "rgba(255,179,71,0.9)"), b: tinted(mask, "rgba(90,209,160,0.9)") };
+             orange: tinted(mask, "#f0b429"), a: tinted(mask, "#f0b429"), b: tinted(mask, "#2f8f6b") };
   }
 }
 
@@ -310,10 +354,10 @@ const fmt = c => {
 
 // ===== Drawing =====
 function draw() {
-  ctx.fillStyle = "#0f1115";
+  ctx.fillStyle = "#fbf8f1";
   ctx.fillRect(0, 0, W, H);
   // dot grid
-  ctx.fillStyle = "#1e232c";
+  ctx.fillStyle = "#e3dccd";
   for (let x = 20; x < W; x += 40) for (let y = 20; y < H; y += 40) ctx.fillRect(x - 1, y - 1, 2, 2);
 
   const shape = shapes[ri];
@@ -326,15 +370,15 @@ function draw() {
       ctx.restore();
     });
     const [l1, l2] = longLine(cut.a, cut.b);
-    ctx.strokeStyle = "#e8eaf0"; ctx.lineWidth = 2;
+    ctx.strokeStyle = "#1f1d1a"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(l1[0], l1[1]); ctx.lineTo(l2[0], l2[1]); ctx.stroke();
     ctx.font = "bold 20px system-ui"; ctx.textAlign = "center";
     [[cut.c1, cut.a1], [cut.c2, cut.a2]].forEach(([c, v]) => {
       if (!c) return;
       const [x, y] = c;
-      ctx.fillStyle = "rgba(15,17,21,0.75)";
+      ctx.fillStyle = "rgba(31,29,26,0.85)";
       ctx.fillRect(x - 36, y - 18, 72, 28);
-      ctx.fillStyle = "#e8eaf0";
+      ctx.fillStyle = "#fbf8f1";
       ctx.fillText(v.toFixed(1) + "%", x, y + 3);
     });
   } else {
@@ -343,7 +387,7 @@ function draw() {
       const [l1, l2] = longLine(dragA, dragB);
       ctx.save();
       ctx.setLineDash([8, 8]);
-      ctx.strokeStyle = "rgba(232,234,240,0.9)"; ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(31,29,26,0.8)"; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(l1[0], l1[1]); ctx.lineTo(l2[0], l2[1]); ctx.stroke();
       ctx.restore();
     }
@@ -396,6 +440,29 @@ function finishRound() {
   draw();
 }
 
+// after the last round: buttons to look back at every cut
+function showRound(i) {
+  ri = i;
+  $("hud").textContent = "Shape " + (i + 1) + " / " + ROUNDS;
+  $("msg").textContent = "Shape " + (i + 1) + ":  " + fmt(cuts[i]) + "  ·  " + scoreFor(cuts[i]) + " points";
+  [...$("review").children].forEach((b, j) => b.classList.toggle("on", j === i));
+  draw();
+}
+
+function buildReview() {
+  const box = $("review");
+  box.innerHTML = "";
+  cuts.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.textContent = (i + 1) + " " + emojiFor(c);
+    b.title = "See shape " + (i + 1);
+    b.onclick = () => showRound(i);
+    box.appendChild(b);
+  });
+  box.classList.remove("hidden");
+  [...box.children].forEach((b, j) => b.classList.toggle("on", j === ri));
+}
+
 function showResult() {
   const total = cuts.reduce((s, c) => s + scoreFor(c), 0);
   $("total").textContent = total + " / " + ROUNDS * 100;
@@ -403,7 +470,9 @@ function showResult() {
   $("result").classList.remove("hidden");
   $("nextBtn").classList.add("hidden");
   $("practiceBtn").classList.remove("hidden");
+  buildReview();
   if (mode === "daily") {
+    Daily.record("half", total);
     $("shareBtn").classList.remove("hidden");
     Daily.countdown($("sub"), "Half");
   } else {
@@ -437,8 +506,9 @@ $("practiceBtn").onclick = () => {
 };
 
 function start(rand) {
-  shapes = [0, 1, 2].map(level => makeShape(rand, level));
+  shapes = LEVELS.map(level => makeShape(rand, level));
   ri = 0; cuts = []; phase = "cut"; dragA = dragB = null;
+  $("review").classList.add("hidden");
   $("hud").textContent = "Shape 1 / " + ROUNDS;
   $("msg").textContent = "Drag one straight line to cut the shape into two equal halves.";
   $("result").classList.add("hidden");
@@ -457,7 +527,7 @@ if (saved && saved.cuts) {
   phase = "done";
   $("hud").textContent = "Shape " + ROUNDS + " / " + ROUNDS;
   showResult();
-  $("msg").textContent = "You already cut today's shapes.";
+  $("msg").textContent = "You already cut today's shapes. Tap a number to look back.";
   draw();
 }
 </script>

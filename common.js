@@ -66,5 +66,29 @@ const Daily = (() => {
     };
   }
 
-  return { rng, key, dayNum, seedFor, load, save, countdown, stopCountdown, share, point };
+  // Daily scores for the home page: { game: { yyyymmdd: score } }
+  const SCORES = "dailyish-scores";
+  function allScores() {
+    try { return JSON.parse(localStorage.getItem(SCORES)) || {}; } catch (e) { return {}; }
+  }
+  function record(game, score) {
+    const all = allScores();
+    (all[game] = all[game] || {})[key] = score;
+    try { localStorage.setItem(SCORES, JSON.stringify(all)); } catch (e) {}
+  }
+
+  // footer clock: any <… data-next> shows the time left until tomorrow's games
+  function tickNext() {
+    const els = document.querySelectorAll("[data-next]");
+    if (!els.length) return;
+    const n = new Date();
+    const s = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1) - n) / 1000);
+    const p = v => String(v).padStart(2, "0");
+    const text = p(Math.floor(s / 3600)) + "h " + p(Math.floor(s % 3600 / 60)) + "m " + p(s % 60) + "s";
+    els.forEach(el => { el.textContent = text; });
+  }
+  tickNext();
+  setInterval(tickNext, 1000);
+
+  return { rng, key, dayNum, seedFor, load, save, countdown, stopCountdown, share, point, record, allScores };
 })();
